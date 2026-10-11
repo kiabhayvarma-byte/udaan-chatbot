@@ -6,7 +6,6 @@ from groq import Groq
 from gtts import gTTS
 from audio_recorder_streamlit import audio_recorder
 
-# Load environment variable agar .env me ho
 load_dotenv()
 
 st.set_page_config(
@@ -15,28 +14,21 @@ st.set_page_config(
     layout="wide"
 )
 
-# Active chat models ki list (ek fail hua to script dusra try karegi)
-CANDIDATE_MODELS = [
-    "llama-3.3-70b-versatile",
-    "llama-3.1-8b-instant",
-    "openai/gpt-oss-120b",
-    "openai/gpt-oss-20b",
-    "qwen/qwen3-32b"
-]
+# API Key priority: Streamlit secrets -> .env -> manual sidebar
+api_key = st.secrets.get("GROQ_API_KEY", os.getenv("GROQ_API_KEY", ""))
 
-# Sidebar Configuration
 with st.sidebar:
-    st.header("🔑 API Setup")
-    env_key = os.getenv("GROQ_API_KEY", "")
-    api_key_input = st.text_input("Groq API Key daaliye:", value=env_key, type="password")
+    st.header("⚙️ Settings")
+    if not api_key:
+        api_key = st.text_input("Enter Groq API Key:", type="password")
 
-    st.header("🌐 Settings")
     language = st.selectbox(
-        "Response Language:",
-        ["Auto-Detect", "Hindi (हिन्दी)", "Bhojpuri (भोजपुरी)", "English"]
+        "Response Language (Bhasa):",
+        ["Hindi (हिन्दी)", "Bhojpuri (भोजपुरी)", "English (Indian Accent)", "Auto-Detect"]
     )
     
-    enable_voice_output = st.checkbox("Voice Output Enable Rakhein", value=True)
+    enable_voice = st.checkbox("Voice Output On", value=True)
+    voice_speed = st.checkbox("Fast Speech Mode (Tez aawaz)", value=False)
     
     st.markdown("---")
     st.markdown("### 📚 6 Pillars of Udaan:")
@@ -49,54 +41,44 @@ with st.sidebar:
     6. **Eco-Friendly School**
     """)
     
-    if st.button("🧹 Clear Chat History"):
+    if st.button("🧹 Clear Chat"):
         st.session_state.messages = []
         st.rerun()
 
-# API Key Validation
-if not api_key_input:
-    st.warning("👈 Left side ke sidebar me apni Groq API Key daaliye chalu karne ke liye.")
+if not api_key:
+    st.warning("👈 Kripya sidebar mein Groq API Key darj karein.")
     st.stop()
 
-# Groq Client Initialization
-client = Groq(api_key=api_key_input.strip())
+client = Groq(api_key=api_key.strip())
 
-# System Prompt
 SYSTEM_PROMPT = """
-You are 'Udaan - Ek Nayi Soch AI CHATBOT', an expert education consultant and teacher trainer.
-You specialize in blending Digital and Traditional Pedagogies across 6 core pillars:
+You are 'Udaan - Ek Nayi Soch AI CHATBOT', an energetic, practical education mentor and teacher trainer.
+You specialize in 6 core pillars: Digital/Traditional Learning, TLM, Low-cost Smart Class, Inclusive Education, Activity Based Learning (ABL), and Eco-friendly Schools.
 
-1. Digital and Traditional Learning (Blending chalk-and-talk with digital content, tablets, mobile tools)
-2. Teaching Learning Material - TLM (Low-cost, no-cost handmade models, charts, tactile aids)
-3. Low Cost Smart Class (Using basic projectors, TV screens, smartphones, offline content like DIKSHA)
-4. Inclusive Education (Catering to children with special needs, slow learners, multilingual backgrounds, gender equity)
-5. Activity Based Learning - ABL (Learning through play, peer learning, experiments, math labs)
-6. Eco Friendly School (Green campus, seed banks, waste recycling, nature integration, kitchen gardens)
-
-RULES:
-- Provide strictly plain text or markdown conversational answers.
-- NEVER output JSON schema, commentary arguments, or invoke tool calls.
-- Support English, Hindi, and polite Bhojpuri naturally.
+Tone & Style Rules:
+- Keep responses crisp, practical, and directly actionable (avoid unnecessary long essays so voice output stays fast).
+- Never output JSON, code blocks, or tool calls unless explicitly asked.
+- For Hindi: Use clean, natural standard conversational Hindi.
+- For Bhojpuri: Use polite, natural Bhojpuri (e.g., 'रउआ सब के प्रणाम', 'ई तरीका बहुते कारगर बा').
+- For English: Use natural Indian-friendly English phrasing.
 """
 
 st.title("🚀 Udaan - Ek Nayi Soch AI Chatbot")
-st.caption("Empowering Teachers & Schools | Hindi, English & Bhojpuri")
+st.caption("Clean Indian Voice Assistant | Hindi, English & Bhojpuri")
 
-# Initialize Chat History
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Display Messages
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.write(msg["content"])
         if "audio" in msg and msg["audio"]:
             st.audio(msg["audio"], format="audio/mp3")
 
-# Voice Input Section
-st.write("🎙️ **Voice Recording (Boliye):**")
+# Voice Input (Groq Whisper)
+st.write("🎙️ **Mic se bolein:**")
 audio_bytes = audio_recorder(
-    text="Mic par click karein aur bolein",
+    text="Boliye (Click to speak)",
     recording_color="#e8b62c",
     neutral_color="#6aa36f",
     icon_name="microphone",
@@ -105,12 +87,11 @@ audio_bytes = audio_recorder(
 
 user_text = ""
 
-# Audio Transcription (Whisper)
 if audio_bytes:
-    with st.spinner("Aawaz transcribe ho rahi hai..."):
+    with st.spinner("Sun raha hoon..."):
         try:
             audio_file = io.BytesIO(audio_bytes)
-            audio_file.name = "voice.wav"
+            audio_file.name = "audio.wav"
             transcription = client.audio.transcriptions.create(
                 file=audio_file,
                 model="whisper-large-v3",
@@ -119,45 +100,25 @@ if audio_bytes:
             user_text = transcription
             st.info(f"🗣️ Aapne bola: {user_text}")
         except Exception as e:
-            st.error(f"Voice error: {e}")
+            st.error(f"Voice input error: {e}")
 
-# Text Input Section
-chat_input = st.chat_input("Apna sawaal likhein ya upar mic se bolein...")
+chat_input = st.chat_input("Apna sawaal likhein ya mic se bolein...")
 if chat_input:
     user_text = chat_input
 
-# Multi-Model Resilient Chat Function
-def get_groq_response(messages_payload):
-    last_error = None
-    for model_name in CANDIDATE_MODELS:
-        try:
-            res = client.chat.completions.create(
-                model=model_name,
-                messages=messages_payload,
-                temperature=0.7,
-                max_tokens=1024,
-            )
-            return res.choices[0].message.content, model_name
-        except Exception as err:
-            last_error = err
-            # Agar model decommissioned ya 404 ho, to next model try karega
-            continue
-    raise last_error
-
-# Process Message
+# Response Generation
 if user_text:
     st.session_state.messages.append({"role": "user", "content": user_text})
     with st.chat_message("user"):
         st.write(user_text)
 
-    # Language constraint
     lang_instruction = ""
     if language == "Hindi (हिन्दी)":
-        lang_instruction = "Answer strictly in Devanagari Hindi only. Plain conversation."
+        lang_instruction = "Respond concisely in standard Hindi."
     elif language == "Bhojpuri (भोजपुरी)":
-        lang_instruction = "Answer strictly in natural, polite Bhojpuri only. Plain conversation."
-    elif language == "English":
-        lang_instruction = "Answer strictly in English only. Plain conversation."
+        lang_instruction = "Respond concisely in natural, respectful Bhojpuri."
+    elif language == "English (Indian Accent)":
+        lang_instruction = "Respond concisely in clear Indian English."
 
     groq_payload = [
         {"role": "system", "content": f"{SYSTEM_PROMPT}\n{lang_instruction}"}
@@ -168,20 +129,35 @@ if user_text:
     with st.chat_message("assistant"):
         with st.spinner("Jawab taiyar ho raha hai..."):
             try:
-                assistant_reply, used_model = get_groq_response(groq_payload)
+                # Ultra-fast model inference
+                response = client.chat.completions.create(
+                    model="llama-3.1-8b-instant",
+                    messages=groq_payload,
+                    temperature=0.6,
+                    max_tokens=600
+                )
+                assistant_reply = response.choices[0].message.content
                 st.write(assistant_reply)
 
-                # Audio Generation (TTS)
+                # Crisp Indian Voice Engine (gTTS with Indian domain routing)
                 audio_data = None
-                if enable_voice_output:
+                if enable_voice:
                     try:
-                        tts_lang = "hi" if language in ["Hindi (हिन्दी)", "Bhojpuri (भोजपुरी)"] else "en"
-                        tts = gTTS(text=assistant_reply, lang=tts_lang, slow=False)
+                        clean_text = assistant_reply.replace("*", "").replace("#", "").strip()
+                        
+                        # Audio settings for clean Indian accent
+                        if language == "English (Indian Accent)":
+                            tts = gTTS(text=clean_text, lang='en', tld='co.in', slow=voice_speed)
+                        else:
+                            tts = gTTS(text=clean_text, lang='hi', slow=voice_speed)
+
                         audio_buffer = io.BytesIO()
                         tts.write_to_fp(audio_buffer)
                         audio_buffer.seek(0)
                         audio_data = audio_buffer.read()
-                        st.audio(audio_data, format="audio/mp3")
+                        
+                        # Auto-play audio response
+                        st.audio(audio_data, format="audio/mp3", autoplay=True)
                     except Exception:
                         pass
 
